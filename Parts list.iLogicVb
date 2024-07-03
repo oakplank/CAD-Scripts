@@ -1,0 +1,61 @@
+﻿Sub Main
+      ' Check if the document is a drawing and ensure it references an assembly
+    Dim doc As Document = ThisApplication.ActiveDocument
+    If doc.DocumentType = DocumentTypeEnum.kDrawingDocumentObject Then
+        Dim drawingDoc As DrawingDocument = CType(doc, DrawingDocument)
+        Dim activeSheet As Sheet = drawingDoc.ActiveSheet
+        Dim partsList As PartsList = Nothing
+
+        ' Try to find an existing parts list
+        If activeSheet.PartsLists.Count > 0 Then
+            partsList = activeSheet.PartsLists(1)
+            ' Sort the parts list if it exists
+            SortPartsList(partsList)
+        Else
+            ' If no parts list is found, create one
+            partsList = CreateAndPlacePartsList(activeSheet)
+            If partsList IsNot Nothing Then
+                ' Sort the new parts list alphabetically
+                SortPartsList(partsList)
+            End If
+        End If
+    Else
+        MessageBox.Show("The active document is not a drawing.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+    End If
+End Sub
+
+Function CreateAndPlacePartsList(activeSheet As Sheet) As PartsList
+    Dim assemblyCompDef As ComponentDefinition = GetAssemblyComponentDefinitionFromSheet(activeSheet)
+    If assemblyCompDef Is Nothing Then
+        MessageBox.Show("No assembly found in any of the drawing views.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Return Nothing
+    End If
+
+    ' Define the placement point in the top right corner
+    ' Adjust the X and Y values to avoid overlapping with the title block or borders
+    Dim placementPoint As Point2d = ThisApplication.TransientGeometry.CreatePoint2d(activeSheet.Width - 1, activeSheet.Height - 1)
+
+        ' Create a new parts list at the specified placement point
+    Try
+        Dim partsList As PartsList = activeSheet.PartsLists.Add(assemblyCompDef, placementPoint)
+        Return partsList
+    Catch ex As Exception
+        MessageBox.Show("Failed to create parts list: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Return Nothing
+    End Try
+End Function
+
+Function GetAssemblyComponentDefinitionFromSheet(sheet As Sheet) As ComponentDefinition
+    For Each view As DrawingView In sheet.DrawingViews
+        If View.ReferencedDocumentDescriptor.ReferencedDocumentType = DocumentTypeEnum.kAssemblyDocumentObject Then
+            Return View.ReferencedDocumentDescriptor.ReferencedDocument.ComponentDefinition
+        End If
+    Next
+    Return Nothing
+End Function
+
+Sub SortPartsList(partsList As PartsList)
+    ' Implement sorting logic here
+    ' This will depend on how you wish to sort the parts list
+End Sub
+

@@ -1,0 +1,21 @@
+﻿' Ensure the document is a drawing
+If ThisDoc.Document.DocumentType <> kDrawingDocumentObject Then
+    MessageBox.Show("This is not a drawing document!")
+    Return
+End If
+Dim oDrawing As DrawingDocument
+oDrawing = ThisDoc.Document
+Dim oSheet As Sheet
+oSheet = oDrawing.ActiveSheet
+' Removing detached balloons
+For Each oBalloon As Balloon In oSheet.Balloons
+    If oBalloon.Attached = False Then
+        Call oBalloon.Delete()
+    End If
+Next
+' Removing detached dimensions
+For Each oDrawingDim In oSheet.DrawingDimensions
+    If oDrawingDim.Attached = False Then
+        Call oDrawingDim.Delete()
+    End If
+Next

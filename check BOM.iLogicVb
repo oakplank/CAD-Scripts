@@ -1,0 +1,26 @@
+﻿Imports Inventor
+
+Public Class ThisApplication
+    Private Sub BOM_Check()
+        Dim oApp As Inventor.Application = Marshal.GetActiveObject("Inventor.Application")
+        Dim oDoc As Inventor.AssemblyDocument = oApp.ActiveDocument
+
+        ' Get the Bill of Materials (BOM) for the active document
+        Dim oBOM As BillOfMaterials = oDoc.ComponentDefinition.BOM
+
+        ' Get the BOM lines
+        Dim oBOMLines As BOMLines = oBOM.BOMLines
+
+        For Each oBOMLine As BOMLine In oBOMLines
+            ' Get the part number property as a string
+            Dim partNumber As String = oBOMLine.PartNumber
+
+            ' Check if the part number is in the complete number box
+            If Not partNumber.Contains("complete number") Then
+                ' Pop up a dialog warning that the part property is out of date
+                oApp.ShowMessageBox("Part property is out of date", Inventor.MessageBoxButtonTypeEnum.kOKButtonType, Inventor.MessageBoxIconTypeEnum.kWarningIcon)
+                Exit For
+            End If
+        Next
+    End Sub
+End Class

@@ -1,0 +1,42 @@
+﻿Imports Inventor
+Imports System.Linq
+Imports System.IO
+
+Dim oDoc As Document = ThisApplication.ActiveDocument
+
+If Not TypeOf oDoc Is AssemblyDocument Then
+    MsgBox("The active document is not an assembly.")
+    Exit Sub
+End If
+
+Dim oAsmDoc As AssemblyDocument = DirectCast(oDoc, AssemblyDocument)
+Dim oAsmCompDef As AssemblyComponentDefinition = oAsmDoc.ComponentDefinition
+
+For Each oOcc As ComponentOccurrence In oAsmCompDef.Occurrences
+    Dim oPartDoc As PartDocument = ThisApplication.Documents.Open(oOcc.ReferencedDocumentDescriptor.ReferencedFileDescriptor.FullFileName, True)
+    Dim oPartCompDef As PartComponentDefinition = oPartDoc.ComponentDefinition
+
+    ' Delete workpoints
+    For i As Integer = oPartCompDef.WorkPoints.Count To 1 Step -1
+        Dim oWorkPoint As WorkPoint = oPartCompDef.WorkPoints.Item(i)
+        Try
+            oWorkPoint.Delete()
+        Catch ex As Exception
+            ' Handle exceptions here if any, like undeletable workpoints
+        End Try
+    Next i
+
+    ' Delete user coordinate systems
+    For i As Integer = oPartCompDef.UserCoordinateSystems.Count To 1 Step -1
+        Dim oUCS As UserCoordinateSystem = oPartCompDef.UserCoordinateSystems.Item(i)
+        Try
+            oUCS.Delete()
+        Catch ex As Exception
+            ' Handle exceptions if UCS cannot be deleted
+        End Try
+    Next i
+
+    oPartDoc.Close(True)
+Next oOcc
+
+MsgBox("Finished processing all parts!")

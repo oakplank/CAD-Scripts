@@ -1,0 +1,141 @@
+﻿Imports System.Windows.Forms
+Imports System.IO
+Imports System.Threading
+Imports Inventor
+
+Sub Main()
+    Dim oApp As Inventor.Application = ThisApplication
+    Dim oDoc As AssemblyDocument = oApp.ActiveDocument
+    Dim oDef As AssemblyComponentDefinition = oDoc.ComponentDefinition
+
+    ' Use .NET's FolderBrowserDialog to get the save location
+    Dim dialog As New FolderBrowserDialog()
+    dialog.Description = "Select Save Location"
+    Dim saveLocation As String
+    If dialog.ShowDialog() = DialogResult.OK Then
+        saveLocation = dialog.SelectedPath
+    Else
+        Exit Sub
+    End If
+
+    ' Always use this template
+    Dim assemblyTemplatePath As String
+    assemblyTemplatePath = "Y:\Inventor Common Files and Templates\Templates\Model Templates\Assembly (Inch).iam"
+
+    For Each oOcc As ComponentOccurrence In oDef.Occurrences
+        ' Extract the name of the part contained inside the occurrence
+		Dim actualDoc As Document
+		If TypeOf oOcc Is ComponentOccurrenceProxy Then
+		    actualDoc = DirectCast(oOcc, ComponentOccurrenceProxy).ReferencedDocumentDescriptor.ReferencedDocument
+		Else
+		    actualDoc = DirectCast(oOcc, ComponentOccurrence).Definition.Document
+		End If
+		
+        Dim partName As String = System.IO.Path.GetFileNameWithoutExtension(actualDoc.FullFileName)
+        
+        ' Generate save file path based on part's name
+        Dim filePath As String = System.IO.Path.Combine(saveLocation, partName & ".iam")
+        
+        ' Create a new sub-assembly to demote the occurrence into
+        Dim oNewSubAssy As AssemblyDocument
+        oNewSubAssy = oApp.Documents.Add(DocumentTypeEnum.kAssemblyDocumentObject, assemblyTemplatePath, False)
+        
+        ' Save the new sub-assembly immediately
+        oNewSubAssy.SaveAs(filePath, True)
+
+        ' Check if the file exists
+        If Not System.IO.File.Exists(filePath) Then
+            MsgBox("File not found: " & filePath)
+            Continue For
+        End If
+
+        ' Use the transformation matrix of the original occurrence for the new sub-assembly
+        Dim oMat As Matrix = oOcc.Transformation
+        Dim oSubAssyOcc As ComponentOccurrence
+        oSubAssyOcc = oDef.Occurrences.Add(filePath, oMat)
+
+        ' Ensure that the BrowserPane and BrowserNodes are correctly initialized for demotion
+        Dim oPane As BrowserPane = oDoc.BrowserPanes.Item("Model")
+        Dim oSubAssyNode As BrowserNode = oPane.GetBrowserNodeFromObject(oSubAssyOcc)
+        
+        Dim oTargetNode As BrowserNode = Nothing
+        For i = oSubAssyNode.BrowserNodes.Count To 1 Step -1
+            If oSubAssyNode.BrowserNodes.Item(i).Visible Then
+                oTargetNode = oSubAssyNode.BrowserNodes.Item(i)
+                Exit For
+            End If
+        Next
+        
+        Dim oSourceNode As BrowserNode = oPane.GetBrowserNodeFromObject(oOcc)
+        
+        ' Demote the occurrence
+        oPane.Reorder(oTargetNode, False, oSourceNode)
+    Next
+	oDoc.Save()
+	Main2()
+End Sub
+
+Sub Main2()
+    Dim oApp As Inventor.Application = ThisApplication
+    Dim oTopAsmDoc As AssemblyDocument = oApp.ActiveDocument
+    
+    ' Prompt the user for Project and Title properties
+    Dim titleValue As String = InputBox("Enter the name of the project for the Title property:", "Update Title")
+    Dim projectValue As String = InputBox("Enter the project # for the Project property:", "Update Project")
+
+    ' Loop through each sub-assembly in the top-level assembly
+    For Each oOcc As ComponentOccurrence In oTopAsmDoc.ComponentDefinition.Occurrences
+        If TypeOf oOcc.ReferencedDocumentDescriptor.ReferencedDocument Is AssemblyDocument Then
+            Dim oSubAsmDoc As AssemblyDocument = DirectCast(oOcc.ReferencedDocumentDescriptor.ReferencedDocument, AssemblyDocument)
+
+            ' Update properties for the sub-assembly
+            UpdateProperties(oSubAsmDoc, titleValue, projectValue, isAssembly:=True)
+
+            ' Each sub-assembly has a single part, so we can directly access that part and update its properties
+            For Each oSubOcc As ComponentOccurrence In oSubAsmDoc.ComponentDefinition.Occurrences
+                If TypeOf oSubOcc.ReferencedDocumentDescriptor.ReferencedDocument Is PartDocument Then
+                    Dim oPartDoc As PartDocument = DirectCast(oSubOcc.ReferencedDocumentDescriptor.ReferencedDocument, PartDocument)
+                    
+                    ' Update properties for the part
+                    UpdateProperties(oPartDoc, titleValue, projectValue)
+                End If
+            Next
+        End If
+    Next
+    
+    MessageBox.Show("Properties updated for all sub-assemblies and parts.", "iLogic", MessageBoxButtons.OK, MessageBoxIcon.Information)
+End Sub
+
+Sub UpdateProperties(ByRef oDoc As Document, ByVal titleValue As String, ByVal projectValue As String, Optional ByVal isAssembly As Boolean = False)
+    Try
+        Dim oPartProperties As PropertySet = oDoc.PropertySets.Item("Design Tracking Properties")
+        If isAssembly Then
+            oPartProperties.Item("Description").Value = "SEQ. CONTAINER"
+        Else
+            oPartProperties.Item("Description").Value = "SEQ. BLOCK"
+        End If
+        oPartProperties.Item("Project").Value = projectValue
+    Catch ex As Exception
+        MsgBox("Error setting Description or Project: " & ex.Message)
+    End Try
+
+    ' Update Title property
+    Try
+        Dim oSummaryInfo As PropertySet = oDoc.PropertySets.Item("Summary Information")
+        oSummaryInfo.Item("Title").Value = titleValue
+    Catch ex As Exception
+        MsgBox("Error setting Title: " & ex.Message)
+    End Try
+	
+	' Update Part Type property
+	Try
+    	Dim oSummaryInfo As PropertySet = oDoc.PropertySets.Item("User Defined Properties")
+        oSummaryInfo.Item("Part Type").Value = "NA"
+    Catch ex As Exception
+        MsgBox("Error setting Part Type: " & ex.Message)
+    End Try
+
+    ' Save changes to the document
+    oDoc.Save()
+End Sub
+

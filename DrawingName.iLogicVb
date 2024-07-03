@@ -1,0 +1,36 @@
+﻿Dim oDoc As DrawingDocument
+oDoc = ThisDoc.Document
+
+' Check if document is a drawing
+If oDoc.DocumentType <> kDrawingDocumentObject Then
+    Exit Sub
+End If
+
+' Get the referenced model
+Dim oSheet As Sheet
+oSheet = oDoc.ActiveSheet
+
+Dim oView As DrawingView
+oView = oSheet.DrawingViews(1)
+
+Dim oModel As Document
+oModel = oView.ReferencedDocumentDescriptor.ReferencedDocument
+
+' Check if referenced model is part or assembly
+If oModel.DocumentType <> kPartDocumentObject AndAlso oModel.DocumentType <> kAssemblyDocumentObject Then
+    MessageBox.Show("The referenced model is not a part or assembly.")
+    Exit Sub
+End If
+
+' Remove file extensions (.dwg and .ipt/.iam) from names before comparison
+Dim drawingName As String = oDoc.DisplayName
+drawingName = drawingName.Substring(0, drawingName.Length - 4)
+
+Dim modelName As String = oModel.DisplayName
+modelName = modelName.Substring(0, modelName.Length - 4)
+
+' Check if drawing name matches model name
+If drawingName <> modelName Then
+    MessageBox.Show("Warning: drawing name does not match part name.")
+End If
+' iLogic code ends here

@@ -1,0 +1,78 @@
+﻿Imports System.IO
+Imports System.Globalization
+Sub Main()
+
+	'present a File Selection dialog
+	Dim oFileDlg As Inventor.FileDialog = Nothing
+	InventorVb.Application.CreateFileDialog(oFileDlg)
+	oFileDlg.InitialDirectory = oOrigRefName
+	oFileDlg.CancelError = True
+	On Error Resume Next
+	oFileDlg.ShowOpen()
+	If Err.Number <> 0 Then
+	Return
+	ElseIf oFileDlg.FileName <> "" Then
+	excelPath = oFileDlg.FileName
+	End If
+	
+	MessageBox.Show("You selected: " & excelPath , "iLogic")
+
+
+
+    ' Scaling factors
+    Dim scaleX As Double = 30.4807431
+    Dim scaleY As Double = 30.4807431
+    Dim scaleZ As Double = 30.4807431
+
+    ' Function to extract X, Y, Z from a point string and create a workpoint
+    Dim CreateWorkPointFromPointString As Action(Of String, String) = Sub(pointString, workpointName)
+        Dim xSplit = Split(pointString, "X = ")
+        If xSplit.Length > 1 Then
+            Dim ySplit = Split(xSplit(1), ",")
+            If ySplit.Length > 0 Then
+                Dim x As Double = CDbl(ySplit(0)) * scaleX
+                Dim ySplitInner = Split(pointString, "Y = ")
+                If ySplitInner.Length > 1 Then
+                    Dim zSplit = Split(ySplitInner(1), ",")
+                    If zSplit.Length > 0 Then
+                        Dim y As Double = CDbl(zSplit(0)) * scaleY
+                        Dim zSplitInner = Split(pointString, "Z = ")
+                        If zSplitInner.Length > 1 Then
+                            Dim zEndSplit = Split(zSplitInner(1), ")")
+                            If zEndSplit.Length > 0 Then
+                                Dim z As Double = CDbl(zEndSplit(0)) * scaleZ
+                                ' Create a workpoint in Inventor
+                                Dim workpoint As WorkPoint = ThisApplication.ActiveDocument.ComponentDefinition.WorkPoints.AddFixed(ThisApplication.TransientGeometry.CreatePoint(x, y, z))
+                                ' Assign the provided name to the workpoint
+                                workpoint.Name = workpointName
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    End Sub
+
+    ' Start Excel and open the spreadsheet
+    Dim oExcel As Object = CreateObject("Excel.Application")
+    Dim oWb As Object = oExcel.Workbooks.Open(excelPath)
+    Dim oWs As Object = oWb.Sheets(1)
+
+    ' Get the used range of the worksheet
+    Dim oRange As Object = oWs.UsedRange
+    Dim lastRow As Integer = oWs.Cells(oWs.Rows.Count, 1).End(-4162).Row ' -4162 = xlUp
+
+    ' Loop through each row in the Excel sheet
+    For Row = 1 To lastRow
+        ' Extract the mark and point data
+        Dim mark As String = oWs.Cells(Row, 1).Value
+        CreateWorkPointFromPointString(oWs.Cells(Row, 2).Value, mark & "Origin")
+        CreateWorkPointFromPointString(oWs.Cells(Row, 3).Value, mark & "x")
+        CreateWorkPointFromPointString(oWs.Cells(Row, 4).Value, mark & "y")
+    Next
+
+    ' Close Excel without saving changes
+    oWb.Close(False)
+    oExcel.Quit()
+
+End Sub

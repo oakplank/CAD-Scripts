@@ -1,0 +1,155 @@
+﻿Sub Main()
+    On Error GoTo ErrorHandler
+
+    ' Get the currently open document as the main assembly
+    Dim mainAssemblyDoc As AssemblyDocument
+    mainAssemblyDoc = ThisApplication.ActiveDocument
+
+    If mainAssemblyDoc.DocumentType <> kAssemblyDocumentObject Then
+        MsgBox("The active document is not an assembly. Please open an assembly document and try again.")
+        Exit Sub
+    End If
+
+    Dim mainAssyCompDef As AssemblyComponentDefinition
+    mainAssyCompDef = mainAssemblyDoc.ComponentDefinition
+
+    ' Prompt for the folder to save the assemblies
+    Dim saveFolderPath As String
+    saveFolderPath = InputBox("Enter the full path of the folder to save the assemblies:", "Save Folder Path")
+
+    If saveFolderPath = "" Then
+        MsgBox("No folder path provided. Exiting script.")
+        Exit Sub
+    End If
+
+    ' Process the assemblies
+    Dim assembliesProcessed As Boolean
+    assembliesProcessed = SaveAndReplaceAssemblies(mainAssyCompDef, saveFolderPath)
+
+    ' Save the main assembly
+    mainAssemblyDoc.Save()
+
+    If assembliesProcessed Then
+        MsgBox("Assemblies and subparts saved and replaced successfully.")
+    Else
+        MsgBox("No assemblies found.")
+    End If
+    Exit Sub
+
+ErrorHandler:
+    MsgBox("An error occurred: " & Err.Description & " on line " & Erl)
+End Sub
+
+' Subroutine to save and replace assemblies and subparts
+Function SaveAndReplaceAssemblies(oCompDef As AssemblyComponentDefinition, folderPath As String) As Boolean
+    Dim assembliesProcessed As Boolean
+    assembliesProcessed = False
+
+    For Each oOccurrence In oCompDef.Occurrences
+        If oOccurrence.DefinitionDocumentType = kAssemblyDocumentObject Then
+            Dim originalName As String
+            originalName = oOccurrence.Name
+
+            ' Extract the numeric portion from the occurrence name
+            Dim partNameNumber As String
+            partNameNumber = Split(originalName, ":")(0)
+
+            ' Check if the name is numeric
+            If IsNumericName(partNameNumber) Then
+                ' Construct the new name with .1 added
+                Dim newPartName As String
+                newPartName = partNameNumber & ".1"
+
+                ' Construct the new file path
+                Dim newFilePath As String
+                newFilePath = folderPath & "\" & newPartName & ".iam"
+
+                ' Save the assembly with the new name
+                Dim assemblyDoc As AssemblyDocument
+                assemblyDoc = oOccurrence.Definition.Document
+
+                ' Attempt to save the document and catch any errors
+                On Error Resume Next
+                assemblyDoc.SaveAs(newFilePath, True)
+                If Err.Number <> 0 Then
+                    MsgBox("Error saving assembly: " & Err.Description)
+                    Err.Clear
+                    On Error GoTo 0
+                    Exit Function
+                End If
+                On Error GoTo 0
+
+                assemblyDoc.Close(True)
+
+                ' Replace the original occurrence with the renamed one
+                oOccurrence.Replace(newFilePath, True)
+
+                ' Process subparts to save and replace them
+                ProcessSubparts(newFilePath, folderPath)
+
+                assembliesProcessed = True
+            End If
+        End If
+    Next
+
+    SaveAndReplaceAssemblies = assembliesProcessed
+End Function
+
+' Subroutine to process and rename subparts in the assembly
+Sub ProcessSubparts(assemblyFilePath As String, folderPath As String)
+    Dim higherLevelDoc As AssemblyDocument
+    higherLevelDoc = ThisApplication.Documents.Open(assemblyFilePath)
+
+    Dim higherLevelAssyCompDef As AssemblyComponentDefinition
+    higherLevelAssyCompDef = higherLevelDoc.ComponentDefinition
+
+    Dim oOccurrence As ComponentOccurrence
+    For Each oOccurrence In higherLevelAssyCompDef.Occurrences
+        If oOccurrence.DefinitionDocumentType = kPartDocumentObject Then
+            Dim originalPartName As String
+            originalPartName = oOccurrence.Name
+
+            ' Extract the numeric portion from the part name
+            Dim partNameNumber As String
+            partNameNumber = Split(originalPartName, ":")(0)
+
+            If IsNumericName(partNameNumber) Then
+                Dim newPartName As String
+                newPartName = partNameNumber & ".1"
+
+                ' Construct the new file path
+                Dim newPartFilePath As String
+                newPartFilePath = folderPath & "\" & newPartName & ".ipt"
+
+                ' Save the part with the new name
+                Dim partDoc As PartDocument
+                partDoc = oOccurrence.Definition.Document
+
+                ' Attempt to save the document and catch any errors
+                On Error Resume Next
+                partDoc.SaveAs(newPartFilePath, True)
+                If Err.Number <> 0 Then
+                    MsgBox("Error saving part: " & Err.Description)
+                    Err.Clear
+                    On Error GoTo 0
+                    Exit Sub
+                End If
+                On Error GoTo 0
+
+                partDoc.Close(True)
+
+                ' Replace the original occurrence with the renamed one
+                oOccurrence.Replace(newPartFilePath, True)
+            End If
+        End If
+    Next
+
+    ' Save and close the updated higher level assembly
+    higherLevelDoc.Save()
+    higherLevelDoc.Close(True)
+End Sub
+
+' Function to check if the name is numeric
+Function IsNumericName(name As String) As Boolean
+    IsNumericName = IsNumeric(name)
+End Function

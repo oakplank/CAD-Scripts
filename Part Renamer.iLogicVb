@@ -1,0 +1,60 @@
+﻿' Get the current assembly document
+Dim oAsmDoc As AssemblyDocument
+oAsmDoc = ThisApplication.ActiveDocument
+
+' Iterate through occurrences in the assembly
+For Each oOccurrence As ComponentOccurrence In oAsmDoc.ComponentDefinition.Occurrences
+
+    ' Check if the occurrence is an assembly with ".1" in its name
+    If TypeName(oOccurrence.Definition) = "AssemblyComponentDefinition" And InStr(oOccurrence.Name, ".1") > 0 Then
+
+        Dim oSubAsmDoc As AssemblyDocument
+        oSubAsmDoc = oOccurrence.Definition.Document
+
+        ' Look for a matching part in the sub-assembly
+        Dim partFound As Boolean
+        partFound = False
+        Dim oBasePartOccurrence As ComponentOccurrence
+        For Each oSubOccurrence As ComponentOccurrence In oSubAsmDoc.ComponentDefinition.Occurrences
+            If TypeName(oSubOccurrence.Definition) = "PartComponentDefinition" Then
+                If oSubOccurrence.Name = oOccurrence.Name Then
+                    partFound = True
+                    Exit For
+                ElseIf oSubOccurrence.Name = oOccurrence.Name.Replace(".1", "") Then
+                    oBasePartOccurrence = oSubOccurrence
+                End If
+            End If
+        Next
+
+        ' If a matching part is not found, duplicate the base part and rename it
+        If Not partFound And Not oBasePartOccurrence Is Nothing Then
+            Dim oBasePartDoc As PartDocument
+            oBasePartDoc = oBasePartOccurrence.Definition.Document
+
+            Dim oNewPartDoc As PartDocument
+            oNewPartDoc = ThisApplication.Documents.Add(DocumentTypeEnum.kPartDocumentObject, , True)
+
+            oNewPartDoc.DisplayName = oOccurrence.Name
+            oNewPartDoc.SaveAs(oBasePartDoc.FullFileName.Replace(".ipt", ".1.ipt"), False)
+
+            ' Copy the contents of the base part to the new part
+            Dim oBasePartDef As PartComponentDefinition
+            Dim oNewPartDef As PartComponentDefinition
+            oBasePartDef = oBasePartDoc.ComponentDefinition
+            oNewPartDef = oNewPartDoc.ComponentDefinition
+            oNewPartDef.UnitsOfMeasure.LengthUnits = oBasePartDef.UnitsOfMeasure.LengthUnits
+
+            For Each oBody As SurfaceBody In oBasePartDef.SurfaceBodies
+                oNewPartDef.SurfaceBodies.AddByCopying(oBody)
+            Next
+
+            ' Add the new part to the sub-assembly
+            Dim oNewOccurrence As ComponentOccurrence
+            oNewOccurrence = oSubAsmDoc.ComponentDefinition.Occurrences.Add(oNewPartDoc.FullFileName, ThisApplication.TransientGeometry.CreateMatrix())
+            oNewPartDoc.Close(True)
+        End If
+    End If
+Next
+
+' Update the assembly
+oAsmDoc.Update()

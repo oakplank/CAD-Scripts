@@ -1,0 +1,122 @@
+﻿Imports Inventor
+Imports System.Linq
+Imports System.IO
+
+Dim oDoc As Document = ThisApplication.ActiveDocument
+
+If Not TypeOf oDoc Is AssemblyDocument Then
+    MsgBox("The active document is not an assembly.")
+    Exit Sub
+End If
+
+Dim oAsmDoc As AssemblyDocument = DirectCast(oDoc, AssemblyDocument)
+Dim oAsmCompDef As AssemblyComponentDefinition = oAsmDoc.ComponentDefinition
+
+For Each oOcc As ComponentOccurrence In oAsmCompDef.Occurrences
+    Dim oPartDoc As PartDocument = ThisApplication.Documents.Open(oOcc.ReferencedDocumentDescriptor.ReferencedFileDescriptor.FullFileName, True)
+    Dim oPartCompDef As PartComponentDefinition = oPartDoc.ComponentDefinition
+
+    ' Fetch the corners from the part's vertices
+    Dim corners As New List(Of WorkPoint)
+    For Each oVertex As Vertex In oPartCompDef.SurfaceBodies(1).Vertices
+        corners.Add(oPartCompDef.WorkPoints.AddFixed(oVertex.Point))
+    Next
+
+    Dim matchedWPs As New Dictionary(Of WorkPoint, String)
+    Dim renameFailures As New Dictionary(Of WorkPoint, String)
+
+    ' Declaration for storing debug info
+    Dim debugInfo As New List(Of String)
+
+    ' Extract the numeric portion from the occurrence name
+	Dim partNameNumber As String = oOcc.Name.Split(":")(0).TrimStart("0"c)
+	
+	' Possible workpoint suffixes
+	Dim wpSuffixes As New List(Of String) From {"Origin", "x", "y"}
+	
+	' Iterate over each assembly workpoint
+	For Each oWorkPoint As WorkPoint In oAsmCompDef.WorkPoints
+	    ' Check each possible suffix for an exact match with the workpoint name
+	    For Each suffix In wpSuffixes
+	        If oWorkPoint.Name = partNameNumber & suffix Then
+	            Dim closestCornerWP As WorkPoint = Nothing
+	            Dim minDistance As Double = Double.MaxValue
+	
+	            ' Loop over each part corner to find the closest to the current assembly workpoint
+	            For Each cornerWP In corners
+	                Dim dist As Double = cornerWP.Point.DistanceTo(oWorkPoint.Point)
+	                If dist < minDistance Then
+	                    minDistance = dist
+	                    closestCornerWP = cornerWP
+	                End If
+	
+	                ' Add to debugInfo if distance exceeds a threshold, e.g., 10
+	                If dist > 10 Then
+	                    debugInfo.Add("Distance from assembly workpoint " & oWorkPoint.Name & " to part corner " & cornerWP.Name & " is " & dist)
+	                End If
+	            Next
+	
+	            ' Store matched workpoints for renaming
+	            If closestCornerWP IsNot Nothing Then
+	                matchedWPs(closestCornerWP) = oWorkPoint.Name
+	            End If
+	
+	            ' Since we found an exact match, exit the inner loop
+	            Exit For
+	        End If
+	    Next
+	Next
+
+    ' List to store workpoints that are matched and to be retained
+    Dim retainedWPs As New List(Of WorkPoint)
+
+    ' Add the matched workpoint to the retainedWPs list
+    For Each cornerWP In matchedWPs.Keys
+        retainedWPs.Add(cornerWP)
+    Next
+
+    ' Now, iterate through all workpoints in the part and delete the ones not in retainedWPs
+    For Each wp As WorkPoint In oPartCompDef.WorkPoints
+        If Not retainedWPs.Contains(wp) And Not wp.Name.StartsWith("Origin") Then
+            Try
+                wp.Delete()
+            Catch ex As Exception
+                ' Handle exceptions here if any, like undeletable workpoints
+            End Try
+        End If
+    Next
+
+    ' Rename the matched workpoints
+    For Each cornerWP In matchedWPs.Keys
+        Try
+            cornerWP.Name = matchedWPs(cornerWP)
+        Catch ex As Exception
+            renameFailures(cornerWP) = matchedWPs(cornerWP)  ' Save the failure
+        End Try
+    Next
+
+    ' Attempt to rename the failed ones again
+    For Each failedWP In renameFailures.Keys
+        Try
+            failedWP.Name = renameFailures(failedWP)
+        Catch ex As Exception
+            MsgBox("Error renaming workpoint " & failedWP.Name & " to " & renameFailures(failedWP) & ": " & ex.Message)
+        End Try
+    Next
+
+    ' Create a UCS if 3 workpoints have been matched
+    If matchedWPs.Count = 3 Then
+        Dim workPointsList As List(Of WorkPoint) = matchedWPs.Keys.ToList()
+        Dim oUCSDef As UserCoordinateSystemDefinition = oPartCompDef.UserCoordinateSystems.CreateDefinition()
+        oUCSDef.SetByThreePoints(workPointsList(0), workPointsList(1), workPointsList(2))
+        Dim oUCS As UserCoordinateSystem = oPartCompDef.UserCoordinateSystems.Add(oUCSDef)
+        oUCS.Name = "Frame UCS"
+    End If
+
+    ' Display debug information at the end if there's any
+    'If debugInfo.Count > 0 Then
+        'MsgBox(String.Join(vbCrLf, debugInfo))
+    'End If
+
+    oPartDoc.Close(True)
+Next oOcc

@@ -1,0 +1,181 @@
+﻿Imports System.Windows.Forms
+Imports System.IO
+
+' iLogic Script to Load Frames into Assemblies from Excel and Populate Blocks with Corresponding Excel Frame Name
+' Autodesk Inventor 2024
+
+Sub Main()
+
+    Dim inventorApp As Inventor.Application = ThisApplication
+    Dim assemblyDoc As AssemblyDocument = inventorApp.ActiveDocument
+
+    ' Prompt user to select Excel document
+    Dim excelPath As String = SelectExcelFile()
+    If String.IsNullOrEmpty(excelPath) Then
+        MessageBox.Show("No Excel file selected. Exiting script.", "Error")
+        Return
+    End If
+
+    ' Prompt user for folder location of frames
+    Dim framesFolderPath As String = SelectFolder()
+    If String.IsNullOrEmpty(framesFolderPath) Then
+        MessageBox.Show("No folder selected. Exiting script.", "Error")
+        Return
+    End If
+
+    ' Start Excel and open the spreadsheet
+    Dim oExcel As Object = CreateObject("Excel.Application")
+    Dim oWb As Object = oExcel.Workbooks.Open(excelPath)
+    Dim oWs As Object = oWb.Sheets(1)
+
+    ' Iterate through Excel rows
+    Dim lastRow As Integer = oWs.Cells(oWs.Rows.Count, 1).End(-4162).Row ' -4162 = xlUp
+    For Row = 1 To lastRow
+        Dim sequence As String = oWs.Cells(Row, 1).Value
+        Dim frameName As String = oWs.Cells(Row, 2).Value.ToString()
+        Dim frameFilePath As String = System.IO.Path.Combine(framesFolderPath, frameName & ".iam")
+
+        ' Check if the frame file exists and place it in the assembly
+        If System.IO.File.Exists(frameFilePath) Then
+            ' Only process if the sequence is present in the open model
+            If FindSubAssemblyBySequence(assemblyDoc, sequence) IsNot Nothing Then
+                ' Pass the sequence number and frame file path to the subroutine along with the frame name
+                PlaceFrameInAssembly(assemblyDoc, sequence, frameFilePath, frameName)
+            End If
+        Else
+            MessageBox.Show("Frame file not found: " & frameName, "Error")
+        End If
+    Next
+
+    ' Close Excel without saving changes
+    oWb.Close(False)
+    oExcel.Quit()
+
+    MessageBox.Show("Frames loading completed.", "iLogic")
+End Sub
+
+Function SelectExcelFile() As String
+    Dim openFileDialog As New OpenFileDialog()
+    openFileDialog.Filter = "Excel Files (*.xlsx)|*.xlsx"
+    openFileDialog.Title = "Select Excel Document"
+
+    If openFileDialog.ShowDialog() = DialogResult.OK Then
+        Return openFileDialog.FileName
+    Else
+        Return Nothing
+    End If
+End Function
+
+Function SelectFolder() As String
+    Dim folderBrowserDialog As New FolderBrowserDialog()
+    folderBrowserDialog.Description = "Select Folder Location of Frames"
+
+    If folderBrowserDialog.ShowDialog() = DialogResult.OK Then
+        Return folderBrowserDialog.SelectedPath
+    Else
+        Return Nothing
+    End If
+End Function
+
+Sub PlaceFrameInAssembly(mainAssemblyDoc As AssemblyDocument, sequence As String, frameFilePath As String, ByVal frameName As String)
+    ' This variable will be used to hold the newly placed frame occurrence.
+    Dim frame As ComponentOccurrence = Nothing
+    
+    Try
+        ' Find the sub-assembly occurrence that matches the sequence number
+        Dim targetSubAssemblyOcc As Object = FindSubAssemblyBySequence(mainAssemblyDoc, sequence)
+
+        If targetSubAssemblyOcc Is Nothing Then
+            MessageBox.Show("Sub-assembly with sequence '" & sequence & "' not found.", "Error")
+            Return
+        End If
+
+        If TypeOf targetSubAssemblyOcc Is ComponentOccurrence Then
+            Dim subAssyDef As AssemblyComponentDefinition = CType(targetSubAssemblyOcc, ComponentOccurrence).Definition
+            frame = subAssyDef.Occurrences.Add(frameFilePath, ThisApplication.TransientGeometry.CreateMatrix())
+
+            ' Ensure the frame is added successfully before proceeding
+            If frame IsNot Nothing Then
+                ' Recursively find UCS for frame and target sub-assembly
+                Dim frameUCS As UserCoordinateSystem = FindUCSByName(frame.Definition, "Frame UCS")
+                Dim targetUCS As UserCoordinateSystem = FindUCSByName(subAssyDef, "UCS - BL MOD")
+
+                ' If both UCS are found, apply constraints between them
+                If frameUCS IsNot Nothing AndAlso targetUCS IsNot Nothing Then
+                    ApplyUCSConstraints(mainAssemblyDoc, frameUCS, targetUCS, frameName)
+                Else
+                    MessageBox.Show("One or both UCS systems not found. Cannot apply constraints.", "Error")
+                End If
+            Else
+                MessageBox.Show("Failed to place frame for sequence '" & sequence & "'.", "Error")
+            End If
+        Else
+            MessageBox.Show("Returned object is not a ComponentOccurrence.", "Error")
+        End If
+    Catch ex As InvalidCastException
+        MessageBox.Show("An error occurred while casting to ComponentOccurrence: " & ex.Message, "Error")
+    Catch ex As Exception
+        MessageBox.Show("An error occurred while placing the frame: " & ex.Message, "Error")
+    End Try
+End Sub
+
+Function FindUCSByName(compDef As ComponentDefinition, ucsName As String) As UserCoordinateSystem
+    ' First, check the current level's UserCoordinateSystems
+    For Each ucs As UserCoordinateSystem In compDef.UserCoordinateSystems
+        If String.Compare(ucs.Name, ucsName, StringComparison.OrdinalIgnoreCase) = 0 Then
+            Return ucs
+        End If
+    Next
+
+    ' If the component definition is an assembly, look into each occurrence recursively
+    If TypeOf compDef Is AssemblyComponentDefinition Then
+        For Each occ As ComponentOccurrence In CType(compDef, AssemblyComponentDefinition).Occurrences
+            ' Recursive call to search in the sub-component
+            Dim foundUCS As UserCoordinateSystem = FindUCSByName(occ.Definition, ucsName)
+            If foundUCS IsNot Nothing Then
+                Return foundUCS
+            End If
+        Next
+    End If
+
+    ' UCS not found at this level, return Nothing
+    Return Nothing
+End Function
+
+Sub ApplyUCSConstraints(assemblyDoc As AssemblyDocument, ucs1 As UserCoordinateSystem, ucs2 As UserCoordinateSystem, frameName As String)
+    Dim asmCompDef As AssemblyComponentDefinition = assemblyDoc.ComponentDefinition
+    Dim debugMsg As String = "Applying constraints between UCS: " & ucs1.Name & " and " & ucs2.Name
+    MessageBox.Show(debugMsg, "Debug - Applying Constraints")
+    Try
+        ' Using the AddUcsToUcs method with dynamic frame name
+        Dim constraints As Constraints = asmCompDef.Constraints
+        constraints.AddUcsToUcs("Flush:4", {frameName & ":1"}, "UCS - BL MOD", ThisDoc.FileName(False) & ":1", "Frame UCS")
+
+        MessageBox.Show("Constraints successfully applied.", "Debug - Success")
+    Catch ex As Exception
+        MessageBox.Show("Error applying constraints: " & ex.Message, "Debug - Error")
+    End Try
+End Sub
+
+Function FindSubAssemblyBySequence(mainAssemblyDoc As AssemblyDocument, sequence As String) As ComponentOccurrence
+    ' This function searches recursively for a sub-assembly by its sequence number within the main assembly
+    Return FindOccurrenceRecursive(mainAssemblyDoc.ComponentDefinition, sequence)
+End Function
+
+Function FindOccurrenceRecursive(compDef As ComponentDefinition, sequence As String) As ComponentOccurrence
+    ' Recursively search for an occurrence with the given sequence in its name
+    For Each occ As ComponentOccurrence In compDef.Occurrences
+        If occ.Name.ToUpper().Contains(sequence.ToUpper()) Then
+            Return occ
+        Else
+            ' If this occurrence is a sub-assembly, search within it
+            If TypeOf occ.Definition Is AssemblyComponentDefinition Then
+                Dim foundOcc As ComponentOccurrence = FindOccurrenceRecursive(occ.Definition, sequence)
+                If foundOcc IsNot Nothing Then
+                    Return foundOcc
+                End If
+            End If
+        End If
+    Next
+    Return Nothing
+End Function

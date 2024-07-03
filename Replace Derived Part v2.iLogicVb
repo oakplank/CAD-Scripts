@@ -1,0 +1,34 @@
+﻿ Dim oDoc as Document
+oDoc = ThisDoc.Document
+Dim oRefFile As FileDescriptor
+Dim oOrigRefName As Object     
+
+For Each oRefFile In oDoc.file.ReferencedFileDescriptors
+'get the full file path to the original internal references
+oOrigRefName = oRefFile.FullFileName
+
+'Get the short name from the file path
+Dim s As String()
+s = Split(oRefFile.FullFileName, "\")
+
+'present a File Selection dialog
+Dim oFileDlg As inventor.FileDialog = Nothing
+InventorVb.Application.CreateFileDialog(oFileDlg)
+oFileDlg.InitialDirectory = oOrigRefName
+oFileDlg.CancelError = True
+oFileDlg.DialogTitle = "Replace Derived Part: " & s(UBound(s))
+On Error Resume Next
+oFileDlg.ShowOpen()
+If Err.Number <> 0 Then
+Return
+ElseIf oFileDlg.FileName <> "" Then
+selectedfile = oFileDlg.FileName
+End If
+
+'replace the reference
+oRefFile.ReplaceReference (selectedfile)     
+InventorVb.DocumentUpdate()
+oOrigRefName = ""                                        
+Next
+
+iLogicVb.UpdateWhenDone = True

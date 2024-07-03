@@ -1,0 +1,81 @@
+﻿Imports Inventor
+
+Dim oDoc As Document = ThisApplication.ActiveDocument
+
+' Check if it's a part document
+If Not TypeOf oDoc Is PartDocument Then
+    MsgBox("The active document is not a part.")
+    Exit Sub
+End If
+
+Dim oPartCompDef As PartComponentDefinition = oDoc.ComponentDefinition
+
+' Group workpoints by their 'n' values
+Dim workpointGroups As New Dictionary(Of String, List(Of WorkPoint))
+
+For Each oWorkPoint As WorkPoint In oPartCompDef.WorkPoints
+    ' Extract 'n' value from workpoint name
+    Dim nValue As String = ""
+    If oWorkPoint.Name.Contains("Origin") Then
+        nValue = oWorkPoint.Name.Replace("Origin", "")
+    ElseIf oWorkPoint.Name.Contains("x") Then
+        nValue = oWorkPoint.Name.Replace("x", "")
+    ElseIf oWorkPoint.Name.Contains("y") Then
+        nValue = oWorkPoint.Name.Replace("y", "")
+    End If
+    
+    If Not String.IsNullOrEmpty(nValue) Then
+        If Not workpointGroups.ContainsKey(nValue) Then
+            workpointGroups(nValue) = New List(Of WorkPoint)
+        End If
+        workpointGroups(nValue).Add(oWorkPoint)
+    End If
+Next
+
+' For each group of workpoints, triangulate to find the central coordinate
+For Each key In workpointGroups.Keys
+    Dim workpoints As List(Of WorkPoint) = workpointGroups(key)
+
+    ' Ensure that there are three workpoints for triangulation
+    If workpoints.Count = 3 Then
+        ' Calculate the central point based on the three workpoints
+		Dim centralPoint As Object
+		centralPoint = ThisApplication.TransientGeometry.CreatePoint(
+		    (workpoints(0).Point.X + workpoints(1).Point.X + workpoints(2).Point.X) / 3,
+		    (workpoints(0).Point.Y + workpoints(1).Point.Y + workpoints(2).Point.Y) / 3,
+		    (workpoints(0).Point.Z + workpoints(1).Point.Z + workpoints(2).Point.Z) / 3)
+
+
+
+        Dim minDistance As Double = Double.MaxValue
+		Dim closestSolidBody As SurfaceBody = Nothing
+		
+		' Iterate over each solid body to find the one whose centroid is closest to the central point
+		For Each oSolidBody As SurfaceBody In oPartCompDef.SurfaceBodies
+		    Dim minPt As Point = oSolidBody.RangeBox.MinPoint
+			Dim maxPt As Point = oSolidBody.RangeBox.MaxPoint
+			Dim oSolidBodyCentroid As Point = ThisApplication.TransientGeometry.CreatePoint((minPt.X + maxPt.X) / 2, (minPt.Y + maxPt.Y) / 2, (minPt.Z + maxPt.Z) / 2)
+		    Dim dist As Double = centralPoint.DistanceTo(oSolidBodyCentroid)
+		    
+		    If dist < minDistance Then
+		        minDistance = dist
+		        closestSolidBody = oSolidBody
+		    End If
+		Next
+		
+		If closestSolidBody IsNot Nothing Then
+	    ' Ensure that the key is 4 characters long (excluding .1)
+	    Dim renameValue As String
+	    If key.Contains(".1") Then
+	        renameValue = key.Replace(".1", "").PadLeft(4, "0"c) & ".1"
+	    Else If key.Contains(".2") Then
+			renameValue = key.Replace(".2", "").PadLeft(4, "0"c) & ".2"
+		Else
+			renameValue = key.PadLeft(4, "0"c)
+    	End If
+	
+	    ' Rename this body or perform other operations as required.
+	    closestSolidBody.Name = renameValue ' Use the renamed value for naming
+	End If
+    End If
+Next

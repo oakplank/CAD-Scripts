@@ -1,0 +1,123 @@
+﻿' iLogic Script to Fill Sequences in the Main Assembly
+
+Sub Main()
+    On Error GoTo ErrorHandler
+
+    ' Prompt user for the file location
+    Dim folderPath As String
+    folderPath = InputBox("Enter the full path of the folder containing the starter tracks:", "Starter Tracks Folder Path")
+
+    If folderPath = "" Then
+        MessageBox.Show("No folder path provided. Exiting script.")
+        Return
+    End If
+
+    ' Provided data (sequence to FST mapping)
+    Dim sequenceFSTMapping As New Dictionary(Of String, String) From {
+        {"09", "FST55001C"},
+        {"13", "FST55002C"},
+        {"22", "FST55003C"},
+        {"27", "FST55001C"},
+        {"31", "FST55002C"},
+        {"38", "FST55001C"},
+        {"47", "FST55001C"},
+        {"56", "FST55002C"},
+        {"64", "FST55001C"},
+        {"71", "FST55004C"}
+    }
+
+    ' Get the main assembly document
+    Dim mainAssemblyDoc As AssemblyDocument
+    mainAssemblyDoc = ThisApplication.ActiveDocument
+
+    If mainAssemblyDoc.DocumentType <> kAssemblyDocumentObject Then
+        MessageBox.Show("The active document is not an assembly. Please open an assembly document and try again.")
+        Return
+    End If
+
+    Dim mainAssyCompDef As AssemblyComponentDefinition
+    mainAssyCompDef = mainAssemblyDoc.ComponentDefinition
+
+    ' Loop through the occurrences in the main assembly
+    For Each oOccurrence As ComponentOccurrence In mainAssyCompDef.Occurrences
+        If oOccurrence.DefinitionDocumentType = kAssemblyDocumentObject Then
+            Dim originalName As String
+            originalName = oOccurrence.Name
+
+            ' Remove :1 and .1 suffixes
+            originalName = RemoveSuffixes(originalName)
+
+            ' Extract the last two digits of the occurrence name
+            Dim partNameNumber As String
+            partNameNumber = Right(originalName, 2)
+
+            ' Check if the sequence number exists in the provided data
+            If sequenceFSTMapping.ContainsKey(partNameNumber) Then
+                Dim fstNumber As String
+                fstNumber = sequenceFSTMapping(partNameNumber)
+
+                ' Construct the full path for the starter track
+                Dim starterTrackFilePath As String
+                starterTrackFilePath = folderPath & "\" & fstNumber & ".iam"
+
+                ' Check if the starter track exists
+                If System.IO.File.Exists(starterTrackFilePath) Then
+                    ' Open the assembly for the sequence
+                    Dim seqAssemblyDoc As AssemblyDocument
+                    seqAssemblyDoc = ThisApplication.Documents.Open(oOccurrence.Definition.Document.FullFileName)
+
+                    Dim seqAssyCompDef As AssemblyComponentDefinition
+                    seqAssyCompDef = seqAssemblyDoc.ComponentDefinition
+
+                    ' Calculate the bounding box of the existing assembly
+                    Dim boundingBox As Box
+                    boundingBox = oOccurrence.RangeBox
+
+                    ' Calculate the center of the bounding box
+                    Dim center As Point
+                    center = ThisApplication.TransientGeometry.CreatePoint((boundingBox.MinPoint.X + boundingBox.MaxPoint.X) / 2, _
+                                                                         (boundingBox.MinPoint.Y + boundingBox.MaxPoint.Y) / 2, _
+                                                                         (boundingBox.MinPoint.Z + boundingBox.MaxPoint.Z) / 2)
+
+                    ' Create a vector from the center point
+                    Dim translationVector As Vector
+                    translationVector = ThisApplication.TransientGeometry.CreateVector(center.X, center.Y, center.Z)
+
+                    ' Create a transformation matrix to place the FST component at the center of the bounding box
+                    Dim transMatrix As Matrix
+                    transMatrix = ThisApplication.TransientGeometry.CreateMatrix()
+                    transMatrix.SetTranslation(translationVector)
+
+                    ' Place the starter track in the assembly at the calculated position
+                    Dim newOccurrence As ComponentOccurrence
+                    newOccurrence = seqAssyCompDef.Occurrences.Add(starterTrackFilePath, transMatrix)
+                    newOccurrence.Name = fstNumber
+
+                    ' Ground the placed part
+                    newOccurrence.Grounded = True
+
+                    ' Save and close the sequence assembly
+                    seqAssemblyDoc.Save()
+                    seqAssemblyDoc.Close(True)
+                Else
+                    MessageBox.Show("Starter track not found: " & starterTrackFilePath)
+                End If
+            End If
+        End If
+    Next
+
+    ' Save the main assembly
+    mainAssemblyDoc.Save()
+
+    MessageBox.Show("Sequences filled successfully.")
+    Exit Sub
+
+ErrorHandler:
+    MessageBox.Show("An error occurred: " & Err.Description & " on line " & Erl)
+End Sub
+
+' Function to remove :1 and .1 suffixes from a name
+Private Function RemoveSuffixes(name As String) As String
+    name = name.Replace(":1", "").Replace(".1", "")
+    Return name
+End Function

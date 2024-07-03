@@ -1,0 +1,85 @@
+﻿' Function to check and turn off visible sketches in a part document
+Sub CheckAndTurnOffVisibleSketchesInPart(oOccurrence As ComponentOccurrence)
+    ' Get the part document
+    Dim oPartDoc As PartDocument
+    oPartDoc = oOccurrence.Definition.Document
+    
+    ' Flag to check if any sketch is visible
+    Dim hasVisibleSketches As Boolean
+    hasVisibleSketches = False
+    
+    ' Iterate through all 2D sketches in the part to check visibility
+    For Each oSketch As Sketch In oPartDoc.ComponentDefinition.Sketches
+        If oSketch.Visible Then
+            hasVisibleSketches = True
+            Exit For
+        End If
+    Next
+
+    ' Iterate through all 3D sketches in the part to check visibility
+    If Not hasVisibleSketches Then
+        For Each o3DSketch As Sketch3D In oPartDoc.ComponentDefinition.Sketches3D
+            If o3DSketch.Visible Then
+                hasVisibleSketches = True
+                Exit For
+            End If
+        Next
+    End If
+
+    ' If there are visible sketches, open the part document, modify and save it
+    If hasVisibleSketches Then
+        ' Iterate through all 2D sketches in the part to turn off visibility
+        For Each oSketch As Sketch In oPartDoc.ComponentDefinition.Sketches
+            If oSketch.Visible Then
+                oSketch.Visible = False
+            End If
+        Next
+
+        ' Iterate through all 3D sketches in the part to turn off visibility
+        For Each o3DSketch As Sketch3D In oPartDoc.ComponentDefinition.Sketches3D
+            If o3DSketch.Visible Then
+                o3DSketch.Visible = False
+            End If
+        Next
+
+        ' Save and close the part document
+        oPartDoc.Save()
+        oPartDoc.Close()
+    End If
+End Sub
+
+' Function to recursively process components in the assembly
+Sub ProcessComponents(oOccurrence As ComponentOccurrence)
+    ' Check if the component is a part
+    If oOccurrence.DefinitionDocumentType = DocumentTypeEnum.kPartDocumentObject Then
+        ' Check and turn off visible sketches in the part
+        CheckAndTurnOffVisibleSketchesInPart(oOccurrence)
+    ' Check if the component is an assembly
+    ElseIf oOccurrence.DefinitionDocumentType = DocumentTypeEnum.kAssemblyDocumentObject Then
+        ' Open the assembly document
+        Dim oSubAsmDoc As AssemblyDocument
+        oSubAsmDoc = oOccurrence.Definition.Document
+
+        ' Iterate through all components in the sub-assembly
+        For Each oSubComponent As ComponentOccurrence In oSubAsmDoc.ComponentDefinition.Occurrences
+            ' Call the function recursively
+            ProcessComponents(oSubComponent)
+        Next
+    End If
+End Sub
+
+' Main subroutine to start the process
+Sub Main()
+    ' Get the top-level assembly document
+    Dim oAsmDoc As AssemblyDocument
+    oAsmDoc = ThisApplication.ActiveDocument
+
+    ' Iterate through all components in the top-level assembly
+    For Each oComponent As ComponentOccurrence In oAsmDoc.ComponentDefinition.Occurrences
+        ' Call the function to process components
+        ProcessComponents(oComponent)
+    Next
+End Sub
+
+' Call the Main subroutine to execute the script
+Main()

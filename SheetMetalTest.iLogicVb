@@ -1,0 +1,71 @@
+﻿Dim oDoc As Document = ThisDoc.Document
+
+If oDoc.DocumentType = DocumentTypeEnum.kPartDocumentObject Then
+    Dim oPartDoc As PartDocument = oDoc
+
+    ' Check if the model has any geometry
+    If oPartDoc.ComponentDefinition.SurfaceBodies.Count = 0 Then
+        ' MessageBox.Show("Note: No geometry in the model", "Model Check")
+        Exit Sub ' or Function, depending on your code context
+    End If
+
+    If oPartDoc.SubType = "{9C464203-9BAE-11D3-8BAD-0060B0CE6BB4}" Then
+        ' The part is a sheet metal part
+        Dim oDef As SheetMetalComponentDefinition = oPartDoc.ComponentDefinition
+
+        If oDef.HasFlatPattern = False Then
+            ' Check if Flat pattern exists
+            ' Find the largest flat face
+            Dim oFace As Face = Nothing
+            Dim maxArea As Double = 0.0
+            For Each tempFace As Face In oDef.SurfaceBodies.Item(1).Faces
+                If tempFace.SurfaceType = SurfaceTypeEnum.kPlaneSurface Then
+                    Dim tempArea As Double = tempFace.Evaluator.Area
+                    If tempArea > maxArea Then
+                        maxArea = tempArea
+                        oFace = tempFace
+                    End If
+                End If
+            Next
+            If oFace IsNot Nothing Then
+                oDef.Unfold2(oFace)
+                If oDef.HasFlatPattern Then
+                    MessageBox.Show("Note: Flat pattern created", "Flat Pattern Status")
+                    oDef.FlatPattern.ExitEdit()
+                End If
+            End If
+        End If
+
+        ' Check again if flat pattern exists
+        If oDef.HasFlatPattern = False Then
+            ' No flat pattern exists
+            MessageBox.Show("Note: No flat pattern created", "Check Flat Pattern")
+        End If
+    End If
+End If
+
+'Get the current value
+Dim currentValue As String = iProperties.Value("Custom", "EXTRUSION NO")
+
+' Now, run your script
+CurrentStyleParameter=SheetMetal.GetActiveStyle()
+
+Select Case CurrentStyleParameter
+    'Case "Default"
+        'iProperties.Value("Custom", "EXTRUSION NO") = "WRONG!!!"
+    Case "20 Gauge"
+        iProperties.Value("Custom", "EXTRUSION NO") = "ALUM SHEET, 20 Ga. (.032in)"
+    Case "18 Gauge"
+        iProperties.Value("Custom", "EXTRUSION NO") = "ALUM SHEET, 18 Ga. (.04in)"
+    Case "16 Gauge"
+        iProperties.Value("Custom", "EXTRUSION NO") = "ALUM SHEET, 16 Ga. (.051in)"
+    Case "12 Gauge"
+        iProperties.Value("Custom", "EXTRUSION NO") = "ALUM SHEET, 12 Ga. (.081in)"
+    Case "8 Gauge"
+        iProperties.Value("Custom", "EXTRUSION NO") = "ALUM SHEET, 8 Ga. (.125in)"
+    Case "20 Gauge Steel"
+        iProperties.Value("Custom", "EXTRUSION NO") = "STEEL SHEET, 20 Ga. (.04in), GMS"
+    Case Else
+        ' If none of the cases matches, keep the current value
+        iProperties.Value("Custom", "EXTRUSION NO") = currentValue
+End Select 

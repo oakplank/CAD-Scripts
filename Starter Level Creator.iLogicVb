@@ -1,0 +1,91 @@
+﻿Sub Main()
+    On Error GoTo ErrorHandler
+
+    ' Get the currently open document as the main assembly
+    Dim mainAssemblyDoc As AssemblyDocument
+    mainAssemblyDoc = ThisApplication.ActiveDocument
+
+    If mainAssemblyDoc.DocumentType <> kAssemblyDocumentObject Then
+        MsgBox("The active document is not an assembly. Please open an assembly document and try again.")
+        Exit Sub
+    End If
+
+    Dim mainAssyCompDef As AssemblyComponentDefinition
+    mainAssyCompDef = mainAssemblyDoc.ComponentDefinition
+
+    ' Prompt for the folder containing the assemblies
+    Dim assembliesFolderPath As String
+    assembliesFolderPath = InputBox("Enter the full path of the folder containing the assemblies:", "Assemblies Folder Path")
+
+    If assembliesFolderPath = "" Then
+        MsgBox("No folder path provided. Exiting script.")
+        Exit Sub
+    End If
+
+    ' Process the assemblies
+    Dim assembliesFound As Boolean
+    assembliesFound = PlaceAndGroundPanels(mainAssyCompDef, assembliesFolderPath)
+
+    ' Save the main assembly
+    mainAssemblyDoc.Save()
+
+    If assembliesFound Then
+        MsgBox("Panels placed and grounded successfully.")
+    Else
+        MsgBox("No suitable panels found.")
+    End If
+    Exit Sub
+
+ErrorHandler:
+    MsgBox("An error occurred: " & Err.Description & " on line " & Erl)
+End Sub
+
+' Function to check if the name is numeric
+Function IsNumericName(name As String) As Boolean
+    IsNumericName = IsNumeric(name)
+End Function
+
+' Subroutine to place and ground the panels
+Function PlaceAndGroundPanels(oCompDef As AssemblyComponentDefinition, folderPath As String) As Boolean
+    Dim assembliesFound As Boolean
+    assembliesFound = False
+
+    For Each oOccurrence In oCompDef.Occurrences
+        If oOccurrence.DefinitionDocumentType = kAssemblyDocumentObject Then
+            Dim originalName As String
+            originalName = oOccurrence.Name
+
+            ' Extract the numeric portion from the occurrence name
+            Dim partNameNumber As String
+            partNameNumber = Split(originalName, ":")(0)
+
+            ' Check if the name is numeric and has a ":1" suffix
+            If IsNumericName(partNameNumber) And Right(originalName, 2) = ":1" Then
+                ' Convert the numeric part name to integer and add 1000
+                Dim numericPartName As Integer
+                numericPartName = CInt(partNameNumber)
+                Dim higherLevelName As String
+                higherLevelName = CStr(numericPartName + 1000)
+
+                ' Construct the full path for the higher level assembly
+                Dim higherLevelFilePath As String
+                higherLevelFilePath = folderPath & "\" & higherLevelName & ".iam"
+
+                ' Check if the higher level assembly exists
+                If Dir(higherLevelFilePath) <> "" Then
+                    ' Place the higher level assembly
+                    Dim newOccurrence As ComponentOccurrence
+                    newOccurrence = oCompDef.Occurrences.Add(higherLevelFilePath, ThisApplication.TransientGeometry.CreateMatrix())
+                    newOccurrence.Name = higherLevelName & ":1"
+
+                    ' Ground the placed part
+                    newOccurrence.Grounded = True
+
+                    assembliesFound = True
+                End If
+            End If
+        End If
+    Next
+
+    PlaceAndGroundPanels = assembliesFound
+End Function

@@ -1,0 +1,28 @@
+﻿Imports Inventor
+Imports System.Runtime.InteropServices
+If ThisApplication.ActiveDocumentType <> DocumentTypeEnum.kDrawingDocumentObject Then
+	MsgBox("A Drawing Document must be active for this rule to work. Exiting.", vbCritical, "iLogic")
+	Exit Sub
+End If
+
+Dim oDDoc As DrawingDocument = ThisApplication.ActiveDocument
+Dim oSheets As Sheets = oDDoc.Sheets
+
+Dim oMySSOccurrence As SketchedSymbolOccurrence = Nothing
+If oSheets.Count > 0 Then
+    For Each oSheet As Sheet In oSheets
+        For Each oSSOccurrence As SketchedSymbolOccurrence In oSheet.SketchedSymbolOccurrences
+            If oSSOccurrence.SketchedSymbolDefinition.Name = "Purchased Part" Then
+                oMySSOccurrence = oSSOccurrence
+                Exit For
+            End If
+        Next
+        If oMySSOccurrence IsNot Nothing Then Exit For
+    Next
+End If
+
+If oMySSOccurrence Is Nothing Then
+	MsgBox("The 'Purchased Part' sketch symbol was not found in the drawing.",, "")
+Else 'it was found
+	MsgBox("The 'Purchased Part' sketch symbol was found in the drawing.",, "")
+End If
